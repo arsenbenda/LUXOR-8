@@ -1,22 +1,39 @@
+# LUXOR v7.1 AGGRESSIVE - Production Dockerfile
 FROM python:3.11-slim
 
+# Set working directory
 WORKDIR /app
 
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
-    git \
+    g++ \
+    curl \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy requirements first (for better caching)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-COPY config.py .
-COPY luxor_v7_prana.py .
-COPY app.py .
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/data /app/logs /app/libs
+
+# Set Python path
+ENV PYTHONPATH=/app:$PYTHONPATH
+
+# Expose port
 EXPOSE 8000
 
+# Health check (using curl - already installed)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/health')"
+    CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["python", "app.py"]
+# Run the application
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

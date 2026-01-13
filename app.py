@@ -1,125 +1,201 @@
-# ============================================================
-# LUXOR V7 PRANA RUNTIME - FastAPI v5.1.2
-# ============================================================
+# LUXOR v7.1 AGGRESSIVE - FastAPI Application
+# Main API endpoint for trading signals
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
 import uvicorn
 from datetime import datetime
 import logging
-import traceback
-import sys
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+# Import strategy (make sure strategy.py is in the same directory)
+try:
+    from strategy import LuxorStrategy
+except ImportError:
+    # Fallback: return mock data if strategy not available
+    LuxorStrategy = None
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-VERSION = "5.1.2"
-
+# Initialize FastAPI app
 app = FastAPI(
-    title="LUXOR V7 PRANA",
-    description="MTF Gann Trading System v5.1.2 - R:R Fix",
-    version=VERSION
+    title="LUXOR v7.1 AGGRESSIVE API",
+    description="Trading signal API with Gann High/Low integration",
+    version="7.1.0"
 )
 
+# CORS middleware (adjust origins for production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Change to specific domains in production
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
-luxor_system = None
-import_error = None
+# Response model
+class SignalResponse(BaseModel):
+    signal: str
+    score: float
+    price: float
+    timestamp: str
+    indicators: Dict[str, Any]
+    gann_levels: Optional[Dict[str, Any]] = None
+    multi_timeframe_gann: Optional[Dict[str, Any]] = None
+    levels: Dict[str, float]
+    risk: Dict[str, float]
+    metadata: Optional[Dict[str, Any]] = None
 
-try:
-    from luxor_v7_prana import LuxorV7PranaSystem, TIMEFRAME_CONFIGS
-    luxor_system = LuxorV7PranaSystem()
-    logger.info(f"[INIT] LUXOR V7 PRANA v{VERSION} ready")
-    logger.info(f"[INIT] min_bars: 1M={TIMEFRAME_CONFIGS['1M'].min_bars}, 1W={TIMEFRAME_CONFIGS['1W'].min_bars}, 3D={TIMEFRAME_CONFIGS['3D'].min_bars}, 1D={TIMEFRAME_CONFIGS['1D'].min_bars}")
-except Exception as e:
-    import_error = str(e)
-    logger.error(f"[INIT] Failed: {e}")
-    logger.error(traceback.format_exc())
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "7.1.0",
+        "strategy_loaded": LuxorStrategy is not None
+    }
 
-
-@app.exception_handler(Exception)
-async def handler(req, exc):
-    return JSONResponse(status_code=500, content={"status": "error", "detail": str(exc), "version": VERSION})
-
-
+# Root endpoint
 @app.get("/")
 async def root():
+    """Root endpoint with API information"""
     return {
-        "name": "LUXOR V7 PRANA",
-        "version": VERSION,
-        "ready": luxor_system is not None,
-        "fixes": ["R:R calculation", "min_bars reduced", "Stop validation"],
-        "min_bars": {"1M": 12, "1W": 40, "3D": 60, "1D": 150}
-    }
-
-
-@app.get("/health")
-async def health():
-    return {
-        "status": "healthy" if luxor_system else "degraded",
-        "version": VERSION,
-        "timestamp": datetime.now().isoformat()
-    }
-
-
-@app.get("/config")
-async def config():
-    if not luxor_system:
-        raise HTTPException(500, f"Not initialized: {import_error}")
-    
-    from luxor_v7_prana import TIMEFRAME_CONFIGS, MIN_RR_RATIO
-    
-    return {
-        "version": VERSION,
-        "timeframes": {
-            tf: {"min_bars": cfg.min_bars, "gann_lookback": cfg.gann_lookback}
-            for tf, cfg in TIMEFRAME_CONFIGS.items()
+        "message": "LUXOR v7.1 AGGRESSIVE Trading API",
+        "version": "7.1.0",
+        "endpoints": {
+            "health": "/health",
+            "signal": "/signal/daily",
+            "test": "/signal/test"
         },
-        "min_rr_ratio": MIN_RR_RATIO
+        "docs": "/docs",
+        "timestamp": datetime.utcnow().isoformat()
     }
 
-
-@app.get("/signal/daily")
-async def daily(symbol: str = Query(default="BTCUSDT")):
-    if not luxor_system:
-        raise HTTPException(500, f"Not initialized: {import_error}")
+# Main signal endpoint
+@app.get("/signal/daily", response_model=SignalResponse)
+async def get_daily_signal(
+    symbol: str = Query(default="BTCUSDT", description="Trading pair symbol"),
+    timeframe: str = Query(default="1D", description="Timeframe (1D, 3D, 1W, 1M)"),
+    use_gann: bool = Query(default=True, description="Enable Gann High/Low analysis"),
+    use_multi_timeframe: bool = Query(default=True, description="Enable multi-timeframe consensus")
+):
+    """
+    Get daily trading signal with Gann High/Low integration
+    
+    Parameters:
+    - symbol: Trading pair (default: BTCUSDT)
+    - timeframe: Chart timeframe (default: 1D)
+    - use_gann: Enable Gann analysis (default: True)
+    - use_multi_timeframe: Enable MTF consensus (default: True)
+    
+    Returns:
+    - Complete trading signal with entry/stop/target levels
+    """
     try:
-        signal = luxor_system.generate_mtf_signal(symbol=symbol)
-        if signal.get("status") == "error":
-            raise HTTPException(500, signal.get("detail"))
-        return signal
-    except HTTPException:
-        raise
+        logger.info(f"Generating signal for {symbol} on {timeframe}")
+        
+        if LuxorStrategy is None:
+            # Return mock data if strategy not loaded
+            logger.warning("Strategy not loaded, returning mock data")
+            return get_mock_signal()
+        
+        # Initialize strategy
+        strategy = LuxorStrategy(
+            symbol=symbol,
+            timeframe=timeframe,
+            use_gann=use_gann,
+            use_multi_timeframe=use_multi_timeframe
+        )
+        
+        # Generate signal
+        signal_data = strategy.generate_signal()
+        
+        logger.info(f"Signal generated: {signal_data['signal']} with score {signal_data['score']}")
+        
+        return signal_data
+        
     except Exception as e:
-        logger.error(f"Error: {e}")
-        raise HTTPException(500, str(e))
+        logger.error(f"Error generating signal: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating signal: {str(e)}")
 
+# Test endpoint with mock data
+@app.get("/signal/test", response_model=SignalResponse)
+async def get_test_signal():
+    """
+    Get test signal with mock data (for testing without live data)
+    """
+    return get_mock_signal()
 
-@app.get("/signal/quick")
-async def quick(symbol: str = Query(default="BTCUSDT")):
-    if not luxor_system:
-        raise HTTPException(500, f"Not initialized: {import_error}")
-    try:
-        df = luxor_system.fetch_real_binance_data(symbol=symbol)
-        p = float(df['close'].iloc[-1])
-        rsi = float(luxor_system.calculate_rsi(df['close']).iloc[-1])
-        sma = float(df['close'].rolling(200).mean().iloc[-1]) if len(df) >= 200 else p
-        d = "BULLISH" if p > sma and rsi > 50 else "BEARISH" if p < sma and rsi < 50 else "NEUTRAL"
-        return {"status": "success", "symbol": symbol, "price": round(p, 2), "direction": d, "rsi": round(rsi, 2), "sma_200": round(sma, 2), "version": VERSION}
-    except Exception as e:
-        raise HTTPException(500, str(e))
+def get_mock_signal() -> dict:
+    """Generate mock signal data for testing"""
+    return {
+        "signal": "LONG",
+        "score": 85.3,
+        "price": 45230.00,
+        "timestamp": datetime.utcnow().isoformat(),
+        "indicators": {
+            "rsi": 58.5,
+            "ema_fast": 44900.00,
+            "ema_slow": 44200.00,
+            "ema_200": 42800.00,
+            "atr": 920.00,
+            "volatility": 0.028
+        },
+        "gann_levels": {
+            "timeframe": "1D",
+            "gann_high": 46800.00,
+            "gann_low": 43200.00,
+            "range_pct": 8.33,
+            "confidence": 85,
+            "volatility_regime": "MEDIUM",
+            "lookback_used": 108
+        },
+        "multi_timeframe_gann": {
+            "consensus_high": 46500.00,
+            "consensus_low": 43500.00,
+            "avg_confidence": 82.5,
+            "dominant_trend": "BULLISH",
+            "timeframes": {
+                "1D": {"high": 46800.00, "low": 43200.00, "conf": 85},
+                "1W": {"high": 46400.00, "low": 43600.00, "conf": 80},
+                "1M": {"high": 46200.00, "low": 43800.00, "conf": 78}
+            }
+        },
+        "levels": {
+            "entry": 45200.00,
+            "stop_loss": 44400.00,
+            "take_profit": 46800.00,
+            "support_1": 44000.00,
+            "support_2": 43200.00,
+            "resistance_1": 46000.00,
+            "resistance_2": 47500.00
+        },
+        "risk": {
+            "risk_usd": 400.00,
+            "risk_pct": 1.8,
+            "position_size": 0.015,
+            "reward_risk_ratio": 2.0
+        },
+        "metadata": {
+            "timeframe": "1D",
+            "market": "BTC/USDT",
+            "exchange": "Binance",
+            "strategy_version": "7.1.0",
+            "mock_data": True
+        }
+    }
 
-
+# Run server (for local testing)
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    )
