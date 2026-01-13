@@ -1,4 +1,4 @@
-# LUXOR v7.1 AGGRESSIVE Trading System
+# LUXOR v8 AGGRESSIVE Trading System
 
 **High-Performance BTC/USDT Trading Strategy**
 
