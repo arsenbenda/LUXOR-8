@@ -1,0 +1,61 @@
+{
+  "strategy": {
+    "name": "LUXOR v7.1 AGGRESSIVE",
+    "version": "7.1.0",
+    "description": "Maximum profit trading system with dynamic trailing stops"
+  },
+  "parameters": {
+    "scoring": {
+      "min_score": 60,
+      "max_score": 100,
+      "ideal_volatility_min": 0.5,
+      "ideal_volatility_max": 8.0,
+      "min_rsi": 25,
+      "max_rsi": 80
+    },
+    "entry": {
+      "require_momentum": false,
+      "require_volume": false,
+      "bull_market_only": false,
+      "swing_lookback": 5
+    },
+    "risk_management": {
+      "sl_atr_multiplier": 1.2,
+      "trailing_atr_multiplier": 1.5,
+      "breakeven_at": 0.3,
+      "partial_exit_1": {
+        "percent": 0.50,
+        "target": 0.5
+      },
+      "partial_exit_2": {
+        "percent": 0.30,
+        "target": 1.0
+      },
+      "trail_remainder": true
+    },
+    "position_sizing": {
+      "base_size": 1.0,
+      "high_confidence_multiplier": 2.0,
+      "high_confidence_threshold": 85
+    }
+  },
+  "indicators": {
+    "rsi_period": 14,
+    "ema_fast": 12,
+    "ema_slow": 26,
+    "volume_ma_period": 20,
+    "atr_period": 14
+  },
+  "backtest": {
+    "initial_capital": 10000,
+    "start_date": "2024-01-01",
+    "end_date": "2026-01-12",
+    "data_file": "data/btcusdt_daily_1000.csv"
+  },
+  "output": {
+    "results_dir": "results/",
+    "charts_dir": "results/charts/",
+    "save_trades": true,
+    "save_equity_curve": true
+  }
+}
