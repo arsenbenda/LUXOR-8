@@ -1,7 +1,7 @@
 """
-LUXOR-8 Trading Bot - FastAPI Application v7.2 STABLE
+LUXOR-8 Trading Bot - FastAPI Application v7.2.4
 Pure Python Implementation - Zero Native Dependencies
-Exchange: Bybit (no geo-restrictions)
+Exchange: Kraken (US-compliant, SEC-registered)
 """
 
 from fastapi import FastAPI, HTTPException
@@ -17,7 +17,7 @@ import os
 # Initialize FastAPI app
 app = FastAPI(
     title="LUXOR-8 Trading Bot",
-    version="7.2.0",
+    version="7.2.4",
     description="Multi-Indicator Trading Strategy API (Pure Python)"
 )
 
@@ -33,16 +33,18 @@ strategy = TradingStrategy(
     bb_std=2.0
 )
 
-# Initialize exchange - BYBIT (no geo-blocking)
+# Initialize exchange - KRAKEN (US-compliant)
 try:
-    exchange = ccxt.bybit({
+    exchange = ccxt.kraken({
         'enableRateLimit': True,
         'options': {
             'defaultType': 'spot',
-        }
+        },
+        'timeout': 30000,
     })
+    print("✅ Kraken exchange initialized successfully")
 except Exception as e:
-    print(f"Warning: Exchange initialization failed: {e}")
+    print(f"❌ Exchange initialization failed: {e}")
     exchange = None
 
 
@@ -66,15 +68,16 @@ async def root():
     """Root endpoint - API information"""
     return {
         "name": "LUXOR-8 Trading Bot",
-        "version": "7.2.0",
+        "version": "7.2.4",
         "status": "running",
-        "exchange": "Bybit",
+        "exchange": "Kraken",
         "endpoints": {
             "health": "/health",
             "test_signal": "/signal/test",
             "live_signal": "/signal/daily"
         },
         "implementation": "Pure Python (NO TA-Lib)",
+        "compliance": "US SEC-registered exchange",
         "timestamp": datetime.utcnow().isoformat() + "Z"
     }
 
@@ -85,7 +88,7 @@ async def health_check():
     return HealthResponse(
         status="healthy",
         timestamp=datetime.utcnow().isoformat() + "Z",
-        version="7.2.0"
+        version="7.2.4"
     )
 
 
@@ -134,15 +137,15 @@ async def get_test_signal():
 
 @app.get("/signal/daily", response_model=SignalResponse, tags=["Signals"])
 async def get_daily_signal(
-    symbol: str = "BTC/USDT",
+    symbol: str = "BTC/USD",
     timeframe: str = "1d",
     limit: int = 100
 ):
     """
-    Live signal endpoint - fetches real market data from Bybit
+    Live signal endpoint - fetches real market data from Kraken
     
     Args:
-        symbol: Trading pair (default: BTC/USDT)
+        symbol: Trading pair (default: BTC/USD)
         timeframe: Candle timeframe (default: 1d)
         limit: Number of candles to fetch (default: 100)
     
@@ -160,7 +163,7 @@ async def get_daily_signal(
                 }
             )
         
-        # Fetch OHLCV data from Bybit
+        # Fetch OHLCV data from Kraken
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
         
         # Convert to DataFrame
@@ -177,7 +180,7 @@ async def get_daily_signal(
         result['timestamp'] = datetime.utcnow().isoformat() + "Z"
         result['symbol'] = symbol
         result['timeframe'] = timeframe
-        result['exchange'] = 'Bybit'
+        result['exchange'] = 'Kraken'
         result['mock'] = False
         
         return SignalResponse(**result)
