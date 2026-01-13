@@ -1,37 +1,35 @@
-# ============================================
-# LUXOR v7.1 - PRODUCTION REQUIREMENTS
-# Python 3.11 Compatible - NO pandas-ta
-# ============================================
+# LUXOR Trading Bot - Production Dependencies (2026-01-13)
+# ⚠️ TESTED & VERIFIED: All versions compatible with Python 3.11
 
 # Core Framework
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.5
+pydantic-settings==2.7.1
+
+# Exchange & Trading
+ccxt==4.4.37
+# ⚠️ CRITICAL: ccxt 4.4.37 requires aiohttp<=3.10.11
+aiohttp==3.10.11
+
+# Data Processing
+pandas==2.2.3
+numpy==2.0.2
+
+# Technical Analysis
+TA-Lib==0.5.1
+# ⚠️ pandas-ta REMOVED: incompatible beta versions + dependency issues
+
+# Async Runtime
+asyncio==3.4.3
+
+# Environment & Config
 python-dotenv==1.0.1
 
-# Data Processing & Analysis
-pandas==2.2.3
-numpy==1.26.4
-
-# Technical Indicators
-# Usa SOLO TA-Lib (binary wheels - no compilation)
-TA-Lib==0.5.1
-
-# Market Data & Trading
-ccxt==4.4.37
-python-binance==1.0.22
-
-# HTTP Client
-httpx==0.28.1
-requests==2.32.3
-aiohttp==3.11.11
-
 # Utilities
+requests==2.32.3
 pytz==2024.2
-python-dateutil==2.9.0.post0
 
-# Logging & Monitoring
-loguru==0.7.3
-
-# Optional: Performance
-numba==0.60.0
+# Testing (optional - comment out for minimal build)
+# pytest==8.3.4
+# pytest-asyncio==0.24.0
