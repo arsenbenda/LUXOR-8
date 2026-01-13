@@ -1,109 +1,227 @@
 """
-LUXOR Trading Bot - Main Application
-Version: 7.1.0
-Author: arsenbenda
-Date: 2026-01-13
+LUXOR-8 Trading Bot - FastAPI Application v7.2 STABLE
+Pure Python Implementation - Zero Native Dependencies
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from datetime import datetime
+from typing import Dict, Optional
+import ccxt
+import pandas as pd
+from strategy import TradingStrategy
+from pydantic import BaseModel
 import os
 
-# Lazy import strategy (import only when needed)
-# from strategy import luxor_strategy
-
+# Initialize FastAPI app
 app = FastAPI(
-    title="LUXOR Trading Bot",
-    description="BTC Trading Strategy API with TA-Lib & Gann Indicators",
-    version="7.1.0"
+    title="LUXOR-8 Trading Bot",
+    version="7.2.0",
+    description="Multi-Indicator Trading Strategy API (Pure Python)"
 )
 
-@app.get("/")
+# Initialize trading strategy
+strategy = TradingStrategy(
+    rsi_period=14,
+    rsi_oversold=30.0,
+    rsi_overbought=70.0,
+    macd_fast=12,
+    macd_slow=26,
+    macd_signal=9,
+    bb_period=20,
+    bb_std=2.0
+)
+
+# Initialize exchange
+try:
+    exchange = ccxt.binance({
+        'enableRateLimit': True,
+        'options': {
+            'defaultType': 'spot',
+        }
+    })
+except Exception as e:
+    print(f"Warning: Exchange initialization failed: {e}")
+    exchange = None
+
+
+class HealthResponse(BaseModel):
+    status: str
+    timestamp: str
+    version: str
+
+
+class SignalResponse(BaseModel):
+    signal: str
+    reason: str
+    price: float
+    timestamp: str
+    indicators: Dict
+    signals: list
+
+
+@app.get("/", tags=["Root"])
 async def root():
-    """API Info"""
+    """Root endpoint - API information"""
     return {
-        "name": "LUXOR Trading Bot",
-        "version": "7.1.0",
-        "status": "online",
-        "endpoints": [
-            "/health",
-            "/signal/test",
-            "/signal/daily"
-        ]
+        "name": "LUXOR-8 Trading Bot",
+        "version": "7.2.0",
+        "status": "running",
+        "endpoints": {
+            "health": "/health",
+            "test_signal": "/signal/test",
+            "live_signal": "/signal/daily"
+        },
+        "implementation": "Pure Python (NO TA-Lib)",
+        "timestamp": datetime.utcnow().isoformat() + "Z"
     }
 
-@app.get("/health")
+
+@app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
-    """
-    Healthcheck endpoint for Docker/Coolify
-    Returns: status, timestamp, version, strategy loaded
-    """
-    try:
-        # Verify strategy module can be imported
-        from strategy import luxor_strategy
-        strategy_loaded = True
-    except Exception as e:
-        strategy_loaded = False
-        
-    return JSONResponse(
-        status_code=200,
-        content={
-            "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "version": "7.1.0",
-            "strategy_loaded": strategy_loaded,
-            "python_version": os.sys.version.split()[0]
-        }
+    """Health check endpoint for monitoring"""
+    return HealthResponse(
+        status="healthy",
+        timestamp=datetime.utcnow().isoformat() + "Z",
+        version="7.2.0"
     )
 
-@app.get("/signal/test")
+
+@app.get("/signal/test", response_model=SignalResponse, tags=["Signals"])
 async def get_test_signal():
     """
-    Test endpoint - returns mock signal
-    """
-    return {
-        "signal": "BUY",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "mock": True,
-        "data": {
-            "price": 45000.0,
-            "rsi": 45.0,
-            "macd": 120.0
-        }
-    }
-
-@app.get("/signal/daily")
-async def get_daily_signal():
-    """
-    Production endpoint - returns real BTC signal
-    Imports strategy module lazily to avoid startup failures
+    Test signal endpoint with mock data
+    Returns a signal based on synthetic OHLCV data
     """
     try:
-        from strategy import luxor_strategy
+        # Generate mock OHLCV data (50 periods for indicators)
+        mock_data = []
+        base_price = 45000.0
         
-        # Execute strategy (fetches real data from exchange)
-        result = luxor_strategy()
+        for i in range(50):
+            # Simulate price movement
+            price = base_price + (i * 100) + ((-1) ** i * 50)
+            mock_data.append({
+                'timestamp': datetime.utcnow().timestamp() - (3600 * (50 - i)),
+                'open': price - 50,
+                'high': price + 100,
+                'low': price - 100,
+                'close': price,
+                'volume': 1000 + (i * 10)
+            })
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "symbol": "BTC/USDT",
-                **result
-            }
-        )
+        df = pd.DataFrame(mock_data)
+        
+        # Analyze with strategy
+        result = strategy.analyze(df)
+        result['timestamp'] = datetime.utcnow().isoformat() + "Z"
+        result['mock'] = True
+        
+        return SignalResponse(**result)
         
     except Exception as e:
-        return JSONResponse(
+        raise HTTPException(
             status_code=500,
-            content={
+            detail={
+                "error": "Test signal generation failed",
+                "message": str(e),
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+        )
+
+
+@app.get("/signal/daily", response_model=SignalResponse, tags=["Signals"])
+async def get_daily_signal(
+    symbol: str = "BTC/USDT",
+    timeframe: str = "1d",
+    limit: int = 100
+):
+    """
+    Live signal endpoint - fetches real market data
+    
+    Args:
+        symbol: Trading pair (default: BTC/USDT)
+        timeframe: Candle timeframe (default: 1d)
+        limit: Number of candles to fetch (default: 100)
+    
+    Returns:
+        Trading signal with indicators
+    """
+    try:
+        if exchange is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "Exchange not available",
+                    "message": "CCXT exchange initialization failed",
+                    "timestamp": datetime.utcnow().isoformat() + "Z"
+                }
+            )
+        
+        # Fetch OHLCV data from exchange
+        ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(
+            ohlcv,
+            columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
+        )
+        
+        # Convert timestamp to datetime
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        
+        # Analyze with strategy
+        result = strategy.analyze(df)
+        result['timestamp'] = datetime.utcnow().isoformat() + "Z"
+        result['symbol'] = symbol
+        result['timeframe'] = timeframe
+        result['mock'] = False
+        
+        return SignalResponse(**result)
+        
+    except ccxt.NetworkError as e:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Network error",
+                "message": f"Failed to connect to exchange: {str(e)}",
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+        )
+    except ccxt.ExchangeError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Exchange error",
+                "message": str(e),
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
                 "error": "Strategy execution failed",
                 "message": str(e),
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             }
         )
 
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Global exception handler"""
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error",
+            "message": str(exc),
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
