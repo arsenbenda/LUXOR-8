@@ -1,0 +1,43 @@
+# ============================================
+# LUXOR v7.1 - PRODUCTION REQUIREMENTS
+# Python 3.11 Compatible - Tested on Docker
+# ============================================
+
+# Core Framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.5
+python-dotenv==1.0.1
+
+# Data Processing & Analysis
+pandas==2.2.3
+numpy==1.26.4
+
+# Technical Indicators
+# NOTA: pandas-ta ha problemi con versioni specifiche
+# Usiamo TA-Lib come primary + pandas_ta senza versione fissata
+# TA-Lib: usa binary wheels da PyPI (nessuna compilazione richiesta)
+TA-Lib==0.5.1
+
+# pandas_ta: versione stabile (no beta)
+# Se fallisce, rimuovere e usare solo TA-Lib
+pandas_ta>=0.3.14b  # Version flexible, latest stable
+
+# Market Data & Trading
+ccxt==4.4.37
+python-binance==1.0.22
+
+# HTTP Client
+httpx==0.28.1
+requests==2.32.3
+aiohttp==3.11.11
+
+# Utilities
+pytz==2024.2
+python-dateutil==2.9.0.post0
+
+# Logging & Monitoring
+loguru==0.7.3
+
+# Optional: Performance
+numba==0.60.0  # JIT compiler for numerical functions
