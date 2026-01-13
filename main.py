@@ -1,6 +1,7 @@
 """
 LUXOR-8 Trading Bot - FastAPI Application v7.2 STABLE
 Pure Python Implementation - Zero Native Dependencies
+Exchange: Bybit (no geo-restrictions)
 """
 
 from fastapi import FastAPI, HTTPException
@@ -32,9 +33,9 @@ strategy = TradingStrategy(
     bb_std=2.0
 )
 
-# Initialize exchange
+# Initialize exchange - BYBIT (no geo-blocking)
 try:
-    exchange = ccxt.binance({
+    exchange = ccxt.bybit({
         'enableRateLimit': True,
         'options': {
             'defaultType': 'spot',
@@ -67,6 +68,7 @@ async def root():
         "name": "LUXOR-8 Trading Bot",
         "version": "7.2.0",
         "status": "running",
+        "exchange": "Bybit",
         "endpoints": {
             "health": "/health",
             "test_signal": "/signal/test",
@@ -137,7 +139,7 @@ async def get_daily_signal(
     limit: int = 100
 ):
     """
-    Live signal endpoint - fetches real market data
+    Live signal endpoint - fetches real market data from Bybit
     
     Args:
         symbol: Trading pair (default: BTC/USDT)
@@ -158,7 +160,7 @@ async def get_daily_signal(
                 }
             )
         
-        # Fetch OHLCV data from exchange
+        # Fetch OHLCV data from Bybit
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
         
         # Convert to DataFrame
@@ -175,6 +177,7 @@ async def get_daily_signal(
         result['timestamp'] = datetime.utcnow().isoformat() + "Z"
         result['symbol'] = symbol
         result['timeframe'] = timeframe
+        result['exchange'] = 'Bybit'
         result['mock'] = False
         
         return SignalResponse(**result)
